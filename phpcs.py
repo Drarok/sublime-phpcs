@@ -146,7 +146,7 @@ class PhpcsCommand():
         self.event = event
         self.checkstyle_reports.append(['Linter', Linter().get_errors(path), 'cross'])
         self.checkstyle_reports.append(['Sniffer', Sniffer().get_errors(path), 'dot'])
-        self.generate()
+        sublime.set_timeout(self.generate, 0)
 
     def generate(self):
         error_list = []
@@ -233,7 +233,7 @@ class PhpcsEventListener(sublime_plugin.EventListener):
     def on_post_save(self, view):
 
         if Pref.phpcs_execute_on_save == True:
-
             if re.search('.+\PHP.tmLanguage', view.settings().get('syntax')):
-
-                PhpcsCommand(view.window()).run(view.file_name(), 'on_save')
+                cmd = PhpcsCommand(view.window())
+                thread = threading.Thread(target=cmd.run, args=(view.file_name(), 'on_save'))
+                thread.start()
