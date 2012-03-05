@@ -152,8 +152,6 @@ class PhpcsCommand():
             PhpcsCommand.instances[view_id] = PhpcsCommand(view.window())
         return PhpcsCommand.instances[view_id]
 
-    event = None
-
     def __init__(self, window):
         self.window = window
         self.checkstyle_reports = []
