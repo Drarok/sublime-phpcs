@@ -16,6 +16,7 @@ class Pref:
         Pref.phpcs_execute_on_save = bool(settings.get('phpcs_execute_on_save'))
         Pref.phpcs_show_errors_on_save = bool(settings.get('phpcs_show_errors_on_save'))
         Pref.phpcs_show_gutter_marks = bool(settings.get('phpcs_show_gutter_marks'))
+        Pref.phpcs_show_errors_in_status = bool(settings.get('phpcs_show_errors_in_status'))
         Pref.phpcs_show_quick_panel = bool(settings.get('phpcs_show_quick_panel'))
         Pref.phpcs_linter_run = bool(settings.get('phpcs_linter_run'))
         Pref.phpcs_linter_regex = settings.get('phpcs_linter_regex')
@@ -27,6 +28,7 @@ settings.add_on_change('phpcs_additional_args', lambda:Pref().load())
 settings.add_on_change('phpcs_execute_on_save', lambda:Pref().load())
 settings.add_on_change('phpcs_show_errors_on_save', lambda:Pref().load())
 settings.add_on_change('phpcs_show_gutter_marks', lambda:Pref().load())
+settings.add_on_change('phpcs_show_errors_in_status', lambda:Pref().load())
 settings.add_on_change('phpcs_show_quick_panel', lambda:Pref().load())
 settings.add_on_change('phpcs_linter_run', lambda:Pref().load())
 settings.add_on_change('phpcs_linter_regex', lambda:Pref().load())
@@ -136,14 +138,32 @@ class Linter(ShellCommand):
 
 class PhpcsCommand():
     """Main plugin class for building the checkstyle report"""
+
+    # Class variable, stores the instances.
+    instances = {}
+
+    @staticmethod
+    def instance(view, allow_new=True):
+        '''Return the last-used instance for a given view.'''
+        view_id = view.id()
+        if view_id not in PhpcsCommand.instances:
+            if not allow_new:
+                return False
+            PhpcsCommand.instances[view_id] = PhpcsCommand(view.window())
+        return PhpcsCommand.instances[view_id]
+
+    event = None
+
     def __init__(self, window):
         self.window = window
         self.checkstyle_reports = []
         self.report = []
         self.event = None
+        self.error_lines = {}
 
     def run(self, path, event=None):
         self.event = event
+        self.checkstyle_reports = []
         self.checkstyle_reports.append(['Linter', Linter().get_errors(path), 'cross'])
         self.checkstyle_reports.append(['Sniffer', Sniffer().get_errors(path), 'dot'])
         self.generate()
@@ -151,6 +171,7 @@ class PhpcsCommand():
     def generate(self):
         error_list = []
         region_set = []
+        self.error_lines = {}
 
         for shell_command, report, icon in self.checkstyle_reports:
             self.window.active_view().erase_regions('checkstyle')
@@ -158,11 +179,15 @@ class PhpcsCommand():
 
             debug_message(shell_command + ' found ' + str(len(report)) + ' errors')
             for error in report:
-                pt = self.window.active_view().text_point(int(error.get_line()) - 1, 0)
+                line = int(error.get_line())
+                pt = self.window.active_view().text_point(line - 1, 0)
                 region_set.append(sublime.Region(pt))
-                error_list.append('(' + error.get_line() + ') ' + error.get_message())
+                error_list.append('(' + str(line) + ') ' + error.get_message())
                 error.set_point(pt)
                 self.report.append(error)
+                if line not in self.error_lines:
+                    self.error_lines[line - 1] = []
+                self.error_lines[line - 1].append(error.get_message())
 
             if len(error_list) > 0:
                 if Pref.phpcs_show_gutter_marks == True:
@@ -183,6 +208,13 @@ class PhpcsCommand():
         self.window.active_view().sel().add(sublime.Region(pt))
         self.window.active_view().show(pt)
 
+    def get_errors(self, line):
+        '''Get the error messages, if any, for a given line number.'''
+        if not line in self.error_lines:
+            return False
+
+        return ', '.join(self.error_lines[line])
+
 
 class PhpcsTextBase(sublime_plugin.TextCommand):
     """Base class for Text commands in the plugin, mainly here to check php files"""
@@ -198,7 +230,7 @@ class PhpcsTextBase(sublime_plugin.TextCommand):
 class PhpcsSniffThisFile(PhpcsTextBase):
     """Command to sniff the open file"""
     def run(self, args):
-        cmd = PhpcsCommand(self.view.window())
+        cmd = PhpcsCommand.instance(self.view)
         cmd.run(self.view.file_name())
 
     def description(self):
@@ -230,10 +262,31 @@ class PhpcsClearSnifferMarksCommand(PhpcsTextBase):
 
 
 class PhpcsEventListener(sublime_plugin.EventListener):
+    def is_php_view(self, view):
+        return re.search('.+\PHP.tmLanguage', view.settings().get('syntax'))
+
     def on_post_save(self, view):
-
         if Pref.phpcs_execute_on_save == True:
+            if self.is_php_view(view):
+                PhpcsCommand.instance(view).run(view.file_name(), 'on_save')
 
-            if re.search('.+\PHP.tmLanguage', view.settings().get('syntax')):
+    def on_selection_modified(self, view):
+        if not Pref.phpcs_show_errors_in_status:
+            return
 
-                PhpcsCommand(view.window()).run(view.file_name(), 'on_save')
+        if view.is_scratch():
+            return
+
+        if not self.is_php_view(view):
+            return
+
+        cmd = PhpcsCommand.instance(view, False)
+        if not cmd:
+            return
+
+        line = view.rowcol(view.sel()[0].end())[0]
+        errors = cmd.get_errors(line)
+        if errors:
+            view.set_status('Phpcs', errors)
+        else:
+            view.erase_status('Phpcs')
