@@ -160,6 +160,7 @@ class PhpcsCommand():
         self.report = []
         self.event = None
         self.error_lines = {}
+        self.shell_commands = ['Linter', 'Sniffer']
 
     def run(self, path, event=None):
         self.event = event
@@ -167,6 +168,10 @@ class PhpcsCommand():
         self.checkstyle_reports.append(['Linter', Linter().get_errors(path), 'cross'])
         self.checkstyle_reports.append(['Sniffer', Sniffer().get_errors(path), 'dot'])
         sublime.set_timeout(self.generate, 0)
+
+    def clear_sniffer_marks(self):
+        for region in self.shell_commands:
+            self.window.active_view().erase_regions(region)
 
     def generate(self):
         error_list = []
@@ -246,8 +251,10 @@ class PhpcsSniffThisFile(PhpcsTextBase):
 
 
 class PhpcsClearSnifferMarksCommand(PhpcsTextBase):
+    """Command to clear the sniffer marks from the view"""
     def run(self, args):
-        self.view.erase_regions("checkstyle")
+        cmd = PhpcsCommand.instance(self.view)
+        cmd.clear_sniffer_marks()
 
     def description(self):
         if not self.is_php_buffer():
@@ -262,6 +269,7 @@ class PhpcsClearSnifferMarksCommand(PhpcsTextBase):
 
 
 class PhpcsEventListener(sublime_plugin.EventListener):
+    """Event listener for the plugin"""
     def is_php_view(self, view):
         return re.search('.+\PHP.tmLanguage', view.settings().get('syntax'))
 
