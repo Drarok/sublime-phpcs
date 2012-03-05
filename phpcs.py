@@ -2,6 +2,7 @@ import datetime
 import os
 import re
 import subprocess
+import threading
 import time
 import sublime
 import sublime_plugin
@@ -164,7 +165,7 @@ class PhpcsCommand():
         self.checkstyle_reports = []
         self.checkstyle_reports.append(['Linter', Linter().get_errors(path), 'cross'])
         self.checkstyle_reports.append(['Sniffer', Sniffer().get_errors(path), 'dot'])
-        self.generate()
+        sublime.set_timeout(self.generate, 0)
 
     def generate(self):
         error_list = []
@@ -195,7 +196,7 @@ class PhpcsCommand():
             # Skip showing the errors if we ran on save, and the option isn't set.
             if self.event == 'on_save' and not Pref.phpcs_show_errors_on_save:
                 return
-            self.window.active_view().window().show_quick_panel(error_list, self.on_quick_panel_done)
+            self.window.show_quick_panel(error_list, self.on_quick_panel_done)
 
     def on_quick_panel_done(self, picked):
         if picked == -1:
@@ -266,7 +267,9 @@ class PhpcsEventListener(sublime_plugin.EventListener):
     def on_post_save(self, view):
         if Pref.phpcs_execute_on_save == True:
             if self.is_php_view(view):
-                PhpcsCommand.instance(view).run(view.file_name(), 'on_save')
+                cmd = PhpcsCommand.instance(view)
+                thread = threading.Thread(target=cmd.run, args=(view.file_name(), 'on_save'))
+                thread.start()
 
     def on_selection_modified(self, view):
         if not Pref.phpcs_show_errors_in_status:
