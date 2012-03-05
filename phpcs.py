@@ -36,7 +36,8 @@ settings.add_on_change('phpcs_linter_regex', lambda:Pref().load())
 
 
 def debug_message(msg):
-    print "[Phpcs] " + msg
+    # print "[Phpcs] " + msg
+    return
 
 
 class CheckstyleError():
