@@ -1,9 +1,8 @@
-import datetime
+import fnmatch
 import os
 import re
 import subprocess
 import threading
-import time
 import sublime
 import sublime_plugin
 import HTMLParser
@@ -48,6 +47,9 @@ Pref.load()
     'phpmd_run',
     'phpmd_executable_path',
     'phpmd_additional_args']]
+
+import project
+project.ThreadManager(sublime.active_window(), Pref.extensions_to_execute)
 
 
 def debug_message(msg):
