@@ -297,16 +297,10 @@ class PhpcsCommand():
 
 class PhpcsTextBase(sublime_plugin.TextCommand):
     """Base class for Text commands in the plugin, mainly here to check php files"""
-    description = ''
+    description = 'No description available.'
 
     def run(self, args):
         debug_message('Not implemented')
-
-    def description(self):
-        if not PhpcsTextBase.should_execute(self.view):
-            return "Invalid file format"
-        else:
-            return description
 
     @staticmethod
     def should_execute(view):
