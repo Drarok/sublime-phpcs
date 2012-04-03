@@ -1,11 +1,22 @@
 import project
+from Queue import Queue
 import sublime
 import threading
 import time
 
 
 class ThreadManager:
+    _instance = None
+    threads = None
+
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            cls._instance = ThreadManager()
+        return cls._instance
+
     def __init__(self, window, extensions):
+        self.threads = Queue()
         self.window = window
         self.extensions = extensions
         self.stages = [self.find_files, self.check_files]
