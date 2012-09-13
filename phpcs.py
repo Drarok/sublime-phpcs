@@ -11,11 +11,17 @@ import HTMLParser
 
 class HierarchicalSettings:
     """Loads preferences in a hierachical manner, allowing view settings to override."""
-    def __init__(self, settingsFile):
-        self._settingsFile = settingsFile
-        self._defaults = {
-            'show_debug': False,
-            'extensions_to_execute': ['php'],
+    def __init__(self, settingsFile, view=None):
+        if view is None:
+            view = sublime.active_window().active_view()
+        self.view = view
+        self.settingsFile = settingsFile
+        self.loadAll(True)
+
+    def loadAll(self, addEvents=False):
+        defaultSettings = {
+            'phpcs_show_debug': False,
+            'phpcs_extensions_to_execute': ['php'],
             'phpcs_execute_on_save': None,
             'phpcs_show_errors_on_save': None,
             'phpcs_show_gutter_marks': None,
@@ -39,26 +45,33 @@ class HierarchicalSettings:
             'phpmd_additional_args': None
         }
 
-    def get(self, settingName):
-        pluginSettings = sublime.load_settings(self._settingsFile)
-        viewSettings = sublime.active_window().active_view().settings()
+        self.settings = {}
+
         sources = {
-            'view': viewSettings,
-            'plugin': pluginSettings,
-            'default': self._defaults
+            'view': self.view.settings(),
+            'plugin': sublime.load_settings(self.settingsFile),
+            'default': defaultSettings
         }
-        for sourceName, values in sources.iteritems():
-            value = values.get(settingName)
-            if value is not None:
-                print 'Setting: %s = value %s in %s settings' % (settingName, value, sourceName)
-                return value
-        return None
+
+        for settingName in defaultSettings:
+            for sourceName in ['view', 'plugin', 'default']:
+                # Add events to reload the settings if they change.
+                if addEvents and sourceName != 'default':
+                    sources[sourceName].add_on_change(settingName, self.loadAll)
+
+                value = sources[sourceName].get(settingName)
+                if value is not None:
+                    break
+            self.settings[settingName] = value
+
+    def get(self, settingName):
+        return self.settings[settingName]
 
 settings = HierarchicalSettings('phpcs.sublime-settings')
 
 
 def debug_message(msg):
-    if settings.get('show_debug'):
+    if settings.get('phpcs_show_debug'):
         print "[Phpcs] " + msg
 
 
@@ -88,7 +101,8 @@ class CheckstyleError():
 
 class ShellCommand():
     """Base class for shelling out a command to the terminal"""
-    def __init__(self):
+    def __init__(self, settings):
+        self.settings = settings
         self.error_list = []
 
     def get_errors(self, path):
@@ -114,18 +128,18 @@ class ShellCommand():
 class Sniffer(ShellCommand):
     """Concrete class for PHP_CodeSniffer"""
     def execute(self, path):
-        if settings.get("phpcs_sniffer_run") != True:
+        if self.settings.get("phpcs_sniffer_run") != True:
             return
 
-        if settings.get("phpcs_executable_path") != "":
-            args = [settings.get("phpcs_executable_path")]
+        if self.settings.get("phpcs_executable_path") != "":
+            args = [self.settings.get("phpcs_executable_path")]
         else:
             args = ['phpcs']
 
         args.append("--report=checkstyle")
 
         # Add the additional arguments from the settings file to the command
-        for key, value in settings.get("phpcs_additional_args").items():
+        for key, value in self.settings.get("phpcs_additional_args").items():
             arg = key
             if value != "":
                 arg += "=" + value
@@ -148,8 +162,8 @@ class Fixer(ShellCommand):
     """Concrete class for PHP-CS-Fixer"""
     def execute(self, path):
 
-        if settings.get("php_cs_fixer_executable_path") != "":
-            args = [settings.get("php_cs_fixer_executable_path")]
+        if self.settings.get("php_cs_fixer_executable_path") != "":
+            args = [self.settings.get("php_cs_fixer_executable_path")]
         else:
             debug_message("php_cs_fixer_executable_path is not set, therefore cannot execute")
             return
@@ -158,7 +172,7 @@ class Fixer(ShellCommand):
         args.append("--verbose")
 
         # Add the additional arguments from the settings file to the command
-        for key, value in settings.get("php_cs_fixer_additional_args").items():
+        for key, value in self.settings.get("php_cs_fixer_additional_args").items():
             arg = key
             if value != "":
                 arg += "=" + value
@@ -180,18 +194,18 @@ class Fixer(ShellCommand):
 class MessDetector(ShellCommand):
     """Concrete class for PHP Mess Detector"""
     def execute(self, path):
-        if settings.get("phpmd_run") != True:
+        if self.settings.get("phpmd_run") != True:
             return
 
-        if settings.get("phpmd_executable_path") != "":
-            args = [settings.get("phpmd_executable_path")]
+        if self.settings.get("phpmd_executable_path") != "":
+            args = [self.settings.get("phpmd_executable_path")]
         else:
             args = ['phpmd']
 
         args.append(os.path.normpath(path))
         args.append('text')
 
-        for key, value in settings.get("phpmd_additional_args").items():
+        for key, value in self.settings.get("phpmd_additional_args").items():
             arg = key
             if value != "":
                 arg += "=" + value
@@ -212,11 +226,11 @@ class MessDetector(ShellCommand):
 class Linter(ShellCommand):
     """Content class for php -l"""
     def execute(self, path):
-        if settings.get("phpcs_linter_run") != True:
+        if self.settings.get("phpcs_linter_run") != True:
             return
 
-        if settings.get("phpcs_php_path") != "":
-            args = [settings.get("phpcs_php_path")]
+        if self.settings.get("phpcs_php_path") != "":
+            args = [self.settings.get("phpcs_php_path")]
         else:
             args = ['php']
 
@@ -229,7 +243,7 @@ class Linter(ShellCommand):
     def parse_report(self, args):
         report = self.shell_out(args)
         debug_message(report)
-        line = re.search(settings.get("phpcs_linter_regex"), report)
+        line = re.search(self.settings.get("phpcs_linter_regex"), report)
         if line != None:
             error = CheckstyleError(line.group('line'), line.group('message'))
             self.error_list.append(error)
@@ -259,22 +273,23 @@ class PhpcsCommand():
         self.error_lines = {}
         self.error_list = []
         self.shell_commands = ['Linter', 'Sniffer', 'MessDetector']
+        self.settings = HierarchicalSettings('phpcs.sublime-settings', window.active_view())
 
     def run(self, path, event=None):
         self.event = event
         self.checkstyle_reports = []
 
         if event != 'on_save':
-            self.checkstyle_reports.append(['Linter', Linter().get_errors(path), 'cross'])
-            self.checkstyle_reports.append(['Sniffer', Sniffer().get_errors(path), 'dot'])
-            self.checkstyle_reports.append(['MessDetector', MessDetector().get_errors(path), 'dot'])
+            self.checkstyle_reports.append(['Linter', Linter(self.settings).get_errors(path), 'cross'])
+            self.checkstyle_reports.append(['Sniffer', Sniffer(self.settings).get_errors(path), 'dot'])
+            self.checkstyle_reports.append(['MessDetector', MessDetector(self.settings).get_errors(path), 'dot'])
         else:
-            if settings.get("phpcs_linter_command_on_save") == True:
-                self.checkstyle_reports.append(['Linter', Linter().get_errors(path), 'cross'])
-            if settings.get("phpcs_command_on_save") == True:
-                self.checkstyle_reports.append(['Sniffer', Sniffer().get_errors(path), 'dot'])
-            if settings.get("phpmd_command_on_save") == True:
-                self.checkstyle_reports.append(['MessDetector', MessDetector().get_errors(path), 'dot'])
+            if self.settings.get("phpcs_linter_command_on_save") == True:
+                self.checkstyle_reports.append(['Linter', Linter(self.settings).get_errors(path), 'cross'])
+            if self.settings.get("phpcs_command_on_save") == True:
+                self.checkstyle_reports.append(['Sniffer', Sniffer(self.settings).get_errors(path), 'dot'])
+            if self.settings.get("phpmd_command_on_save") == True:
+                self.checkstyle_reports.append(['MessDetector', MessDetector(self.settings).get_errors(path), 'dot'])
 
         sublime.set_timeout(self.generate, 0)
 
@@ -283,7 +298,7 @@ class PhpcsCommand():
             self.window.active_view().erase_regions(region)
 
     def set_status_bar(self):
-        if not settings.get("phpcs_show_errors_in_status"):
+        if not self.settings.get("phpcs_show_errors_in_status"):
             return
 
         if self.window.active_view().is_scratch():
@@ -317,15 +332,15 @@ class PhpcsCommand():
                 self.error_lines[line] = error.get_message()
 
             if len(self.error_list) > 0:
-                icon = icon if settings.get("phpcs_show_gutter_marks") else ''
-                outline = sublime.DRAW_OUTLINED if settings.get("phpcs_outline_for_errors") else sublime.HIDDEN
-                if settings.get("phpcs_show_gutter_marks") or Pref.phpcs_outline_for_errors:
+                icon = icon if self.settings.get("phpcs_show_gutter_marks") else ''
+                outline = sublime.DRAW_OUTLINED if self.settings.get("phpcs_outline_for_errors") else sublime.HIDDEN
+                if self.settings.get("phpcs_show_gutter_marks") or self.settings.get("phpcs_outline_for_errors"):
                     self.window.active_view().add_regions(shell_command,
                         region_set, shell_command, icon, outline)
 
-        if settings.get("phpcs_show_quick_panel") == True:
+        if self.settings.get("phpcs_show_quick_panel") == True:
             # Skip showing the errors if we ran on save, and the option isn't set.
-            if self.event == 'on_save' and not settings.get("phpcs_show_errors_on_save"):
+            if self.event == 'on_save' and not self.settings.get("phpcs_show_errors_on_save"):
                 return
             self.show_quick_panel()
 
@@ -399,7 +414,7 @@ class PhpcsTextBase(sublime_plugin.TextCommand):
     def should_execute(view):
         if view.file_name() != None:
             ext = os.path.splitext(view.file_name())[1]
-            result = ext[1:] in settings.get("extensions_to_execute")
+            result = ext[1:] in settings.get("phpcs_extensions_to_execute")
             return result
 
         return False
@@ -493,6 +508,7 @@ class PhpcsFixThisDirectoryCommand(sublime_plugin.WindowCommand):
 class PhpcsEventListener(sublime_plugin.EventListener):
     """Event listener for the plugin"""
     def on_post_save(self, view):
+        print 'on_post_save...'
         if settings.get("phpcs_execute_on_save") == True:
             if PhpcsTextBase.should_execute(view):
                 cmd = PhpcsCommand.instance(view)
