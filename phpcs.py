@@ -9,69 +9,55 @@ import sublime_plugin
 import HTMLParser
 
 
-settings = sublime.load_settings('phpcs.sublime-settings')
+class HierarchicalSettings:
+    """Loads preferences in a hierachical manner, allowing view settings to override."""
+    def __init__(self, settingsFile):
+        self._settingsFile = settingsFile
+        self._defaults = {
+            'show_debug': False,
+            'extensions_to_execute': ['php'],
+            'phpcs_execute_on_save': None,
+            'phpcs_show_errors_on_save': None,
+            'phpcs_show_gutter_marks': None,
+            'phpcs_outline_for_errors': None,
+            'phpcs_show_errors_in_status': None,
+            'phpcs_show_quick_panel': None,
+            'phpcs_sniffer_run': None,
+            'phpcs_command_on_save': None,
+            'phpcs_executable_path': '',
+            'phpcs_additional_args': {},
+            'php_cs_fixer_on_save': None,
+            'php_cs_fixer_executable_path': '',
+            'php_cs_fixer_additional_args': {},
+            'phpcs_linter_run': None,
+            'phpcs_linter_command_on_save': None,
+            'phpcs_php_path': '',
+            'phpcs_linter_regex': None,
+            'phpmd_run': None,
+            'phpmd_command_on_save': None,
+            'phpmd_executable_path': '',
+            'phpmd_additional_args': None
+        }
 
-class Pref:
-    @staticmethod
-    def load():
-        Pref.show_debug = settings.get('show_debug', False)
-        Pref.extensions_to_execute = settings.get('extensions_to_execute', ['php'])
-        Pref.phpcs_execute_on_save = bool(settings.get('phpcs_execute_on_save'))
-        Pref.phpcs_show_errors_on_save = bool(settings.get('phpcs_show_errors_on_save'))
-        Pref.phpcs_show_gutter_marks = bool(settings.get('phpcs_show_gutter_marks'))
-        Pref.phpcs_outline_for_errors = bool(settings.get('phpcs_outline_for_errors'))
-        Pref.phpcs_show_errors_in_status = bool(settings.get('phpcs_show_errors_in_status'))
-        Pref.phpcs_show_quick_panel = bool(settings.get('phpcs_show_quick_panel'))
+    def get(self, settingName):
+        pluginSettings = sublime.load_settings(self._settingsFile)
+        viewSettings = sublime.active_window().active_view().settings()
+        sources = {
+            'view': viewSettings,
+            'plugin': pluginSettings,
+            'default': self._defaults
+        }
+        for source, value in sources.iteritems():
+            if value:
+                print 'Found value %s in %s settings' % (value, source)
+                return value
+        return None
 
-        Pref.phpcs_sniffer_run = bool(settings.get('phpcs_sniffer_run'))
-        Pref.phpcs_command_on_save = bool(settings.get('phpcs_command_on_save'))
-        Pref.phpcs_executable_path = settings.get('phpcs_executable_path', '')
-        Pref.phpcs_additional_args = settings.get('phpcs_additional_args', {})
-
-        Pref.php_cs_fixer_on_save = settings.get('php_cs_fixer_on_save')
-        Pref.php_cs_fixer_executable_path = settings.get('php_cs_fixer_executable_path', '')
-        Pref.php_cs_fixer_additional_args = settings.get('php_cs_fixer_additional_args', {})
-
-        Pref.phpcs_linter_run = bool(settings.get('phpcs_linter_run'))
-        Pref.phpcs_linter_command_on_save = bool(settings.get('phpcs_linter_command_on_save'))
-        Pref.phpcs_php_path = settings.get('phpcs_php_path', '')
-        Pref.phpcs_linter_regex = settings.get('phpcs_linter_regex')
-
-        Pref.phpmd_run = settings.get('phpmd_run')
-        Pref.phpmd_command_on_save = settings.get('phpmd_command_on_save')
-        Pref.phpmd_executable_path = settings.get('phpmd_executable_path', '')
-        Pref.phpmd_additional_args = settings.get('phpmd_additional_args')
-
-Pref.load()
-
-[settings.add_on_change(setting, Pref.load) for setting in [
-    'show_debug',
-    'extensions_to_execute',
-    'phpcs_execute_on_save',
-    'phpcs_show_errors_on_save',
-    'phpcs_show_gutter_marks',
-    'phpcs_outline_for_errors',
-    'phpcs_show_errors_in_status',
-    'phpcs_show_quick_panel',
-    'phpcs_sniffer_run',
-    'phpcs_command_on_save',
-    'phpcs_executable_path',
-    'phpcs_additional_args',
-    'php_cs_fixer_on_save',
-    'php_cs_fixer_executable_path',
-    'php_cs_fixer_additional_args',
-    'phpcs_linter_run',
-    'phpcs_linter_command_on_save',
-    'phpcs_php_path',
-    'phpcs_linter_regex',
-    'phpmd_run',
-    'phpmd_command_on_save',
-    'phpmd_executable_path',
-    'phpmd_additional_args']]
+settings = HierarchicalSettings('phpcs.sublime-settings')
 
 
 def debug_message(msg):
-    if Pref.show_debug == True:
+    if settings.get('show_debug'):
         print "[Phpcs] " + msg
 
 
