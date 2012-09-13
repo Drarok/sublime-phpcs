@@ -47,9 +47,10 @@ class HierarchicalSettings:
             'plugin': pluginSettings,
             'default': self._defaults
         }
-        for source, value in sources.iteritems():
-            if value:
-                print 'Found value %s in %s settings' % (value, source)
+        for sourceName, values in sources.iteritems():
+            value = values.get(settingName)
+            if value is not None:
+                print 'Setting: %s = value %s in %s settings' % (settingName, value, sourceName)
                 return value
         return None
 
